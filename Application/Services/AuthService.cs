@@ -21,18 +21,18 @@ public class AuthService : IAuthService
         _logger = logger;
     }
 
-    public async Task<LoginResponse?> LoginAsync(string email, string password, CancellationToken cancellationToken)
+    public async Task<LoginResponse?> LoginAsync(string username, string password, CancellationToken cancellationToken)
     {
-        var user = await _userRepository.FindByEmailAsync(email, cancellationToken);
+        var user = await _userRepository.FindByUsernameAsync(username, cancellationToken);
         if (user is null)
         {
-            LogFailedAttempt(email);
+            LogFailedAttempt(username);
             return null;
         }
 
         if (!VerifyPassword(password, user.Password))
         {
-            LogFailedAttempt(email);
+            LogFailedAttempt(username);
             return null;
         }
 
@@ -44,7 +44,7 @@ public class AuthService : IAuthService
         {
             Token = tokenResult.Token,
             ExpiresIn = tokenResult.ExpiresIn,
-            User = userDto
+            //User = userDto
         };
     }
 

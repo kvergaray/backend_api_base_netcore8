@@ -46,10 +46,41 @@
 }
 ```
 
+- `POST /api/auth/password`
+- Request:
+
+```json
+{
+  "userId": 1,
+  "length": 12
+}
+```
+
+- Response `200 OK`:
+
+```json
+{
+  "userId": 1,
+  "password": "G3n3rad0!"
+}
+```
+
+- Response `404 Not Found`:
+
+```json
+{
+  "error": "User not found or password could not be updated"
+}
+```
+
 ### Ejemplo curl
 
 ```bash
 curl -s -X POST http://localhost:5287/api/auth/login \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"admin@local\",\"password\":\"P@ssw0rd!\"}"
+
+curl -s -X POST http://localhost:5287/api/auth/password \
+  -H "Content-Type: application/json" \
+  -d "{\"userId\":1,\"length\":12}"
 ```

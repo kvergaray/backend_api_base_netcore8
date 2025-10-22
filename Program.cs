@@ -1,22 +1,19 @@
-using backend_api_base_netcore8.Application.DTOs;
 using backend_api_base_netcore8.Application.Interfaces;
 using backend_api_base_netcore8.Application.Services;
 using backend_api_base_netcore8.Application.Validators;
-using backend_api_base_netcore8.Infrastructure.Data;
 using backend_api_base_netcore8.Infrastructure.Repositories;
 using backend_api_base_netcore8.Infrastructure.Security;
+using backend_api_base_netcore8.Infrastructure.Swagger;
+using backend_api_base_netcore8.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.OpenApi;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -42,6 +39,8 @@ builder.Services.AddSwaggerGen(options =>
     {
         { securityScheme, Array.Empty<string>() }
     });
+
+    options.OperationFilter<AuthLoginOperationFilter>();
 });
 
 builder.Services.AddLogging();
@@ -50,20 +49,36 @@ builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 
-builder.Services.AddDbContext<AuthDbContext>(options =>
+var databaseProviderName = builder.Configuration.GetValue<string>("DatabaseProvider") ?? nameof(DatabaseProvider.MySql);
+if (!Enum.TryParse(databaseProviderName, ignoreCase: true, out DatabaseProvider databaseProvider))
 {
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException($"Unsupported database provider '{databaseProviderName}'. Use 'MySql', 'SqlServer', 'PostgreSql', or 'Oracle'.");
+}
+
+builder.Services.Configure<DatabaseOptions>(options =>
+{
+    var defaultConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    var providerConnectionString = builder.Configuration.GetConnectionString(databaseProvider.ToString());
+
+    var effectiveConnectionString = !string.IsNullOrWhiteSpace(providerConnectionString)
+        ? providerConnectionString
+        : defaultConnectionString;
+
+    if (string.IsNullOrWhiteSpace(effectiveConnectionString))
     {
-        throw new InvalidOperationException("Connection string 'DefaultConnection' was not found.");
+        throw new InvalidOperationException(
+            $"Connection string for provider '{databaseProvider}' was not found. Configure either ConnectionStrings:{databaseProvider} or ConnectionStrings:DefaultConnection.");
     }
 
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+    options.ConnectionString = effectiveConnectionString;
+    options.Provider = databaseProvider;
 });
 
+builder.Services.AddSingleton<IDbConnectionFactory, DbConnectionFactory>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IPasswordService, PasswordService>();
 
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
 if (string.IsNullOrWhiteSpace(jwtOptions.Key))
@@ -108,95 +123,6 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapPost("/api/auth/login", async (
-        LoginRequest request,
-        IAuthService authService,
-        IValidator<LoginRequest> validator,
-        CancellationToken cancellationToken) =>
-    {
-        var validationResult = await validator.ValidateAsync(request, cancellationToken);
-        if (!validationResult.IsValid)
-        {
-            return Results.ValidationProblem(validationResult.ToDictionary());
-        }
-
-        var loginResponse = await authService.LoginAsync(request.Email, request.Password, cancellationToken);
-        if (loginResponse is null)
-        {
-            return Results.Json(
-                new { error = "Invalid credentials" },
-                statusCode: StatusCodes.Status401Unauthorized);
-        }
-
-        return Results.Ok(loginResponse);
-    })
-    .WithName("Login")
-    .WithTags("Auth")
-    .WithOpenApi(operation =>
-    {
-        operation.Summary = "Autentica un usuario y emite un JWT.";
-        operation.RequestBody = new OpenApiRequestBody
-        {
-            Required = true,
-            Content =
-            {
-                ["application/json"] = new OpenApiMediaType
-                {
-                    Example = new OpenApiObject
-                    {
-                        ["email"] = new OpenApiString("admin@local"),
-                        ["password"] = new OpenApiString("P@ssw0rd!")
-                    }
-                }
-            }
-        };
-
-        operation.Responses["200"] = new OpenApiResponse
-        {
-            Description = "Login exitoso",
-            Content =
-            {
-                ["application/json"] = new OpenApiMediaType
-                {
-                    Example = new OpenApiObject
-                    {
-                        ["token"] = new OpenApiString("<jwt>"),
-                        ["expiresIn"] = new OpenApiInteger(3600),
-                        ["user"] = new OpenApiObject
-                        {
-                            ["id"] = new OpenApiInteger(1),
-                            ["roleId"] = new OpenApiInteger(2),
-                            ["name"] = new OpenApiString("Doe"),
-                            ["firstName"] = new OpenApiString("John"),
-                            ["email"] = new OpenApiString("john@acme.com"),
-                            ["degreeId"] = new OpenApiInteger(3),
-                            ["phone"] = new OpenApiLong(9999999999),
-                            ["cip"] = new OpenApiLong(12345678)
-                        }
-                    }
-                }
-            }
-        };
-
-        operation.Responses["401"] = new OpenApiResponse
-        {
-            Description = "Credenciales invalidas",
-            Content =
-            {
-                ["application/json"] = new OpenApiMediaType
-                {
-                    Example = new OpenApiObject
-                    {
-                        ["error"] = new OpenApiString("Invalid credentials")
-                    }
-                }
-            }
-        };
-
-        return operation;
-    })
-    .Produces<LoginResponse>(StatusCodes.Status200OK)
-    .Produces(StatusCodes.Status401Unauthorized)
-    .ProducesValidationProblem();
+app.MapControllers();
 
 app.Run();

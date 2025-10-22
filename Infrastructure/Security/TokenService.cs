@@ -25,10 +25,14 @@ public class TokenService : ITokenService
 
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new(JwtRegisteredClaimNames.Email, user.Email),
-            new(JwtRegisteredClaimNames.GivenName, user.FirstName),
-            new(JwtRegisteredClaimNames.FamilyName, user.Name),
+            //new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            //new(JwtRegisteredClaimNames.Email, user.Email),
+            //new(JwtRegisteredClaimNames.GivenName, user.FirstName),
+            //new(JwtRegisteredClaimNames.UniqueName, user.Name),
+            new("user-id", user.Id.ToString() ?? string.Empty),
+            new("email", user.Email.ToString() ?? string.Empty),
+            new("firstName", user.FirstName.ToString() ?? string.Empty),
+            new("username", user.Name.ToString() ?? string.Empty),
             new("cip", user.Cip?.ToString() ?? string.Empty),
             new("role_id", user.RoleId.ToString()),
             new("degree_id", user.DegreeId?.ToString() ?? string.Empty),
